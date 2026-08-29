@@ -167,6 +167,19 @@ impl Pd3Server {
         );
         Ok(CallToolResult::success(vec![ContentBlock::text(result?)]))
     }
+
+    #[tool(
+        description = "Reinstall every UE4SS mod, picking up Lua files edited on disk without \
+                       restarting the game. Blocks until the reload has finished. Use this \
+                       after deploying a change to a mod or to a shared library -- mods read \
+                       their dependencies at startup, so an edited shared file does not take \
+                       effect until they are reloaded."
+    )]
+    pub async fn reload_mods(&self) -> Result<CallToolResult, ErrorData> {
+        let result = self.offload(|h| h.reload_mods()).await;
+        self.host.on_tool_call("reload_mods", "{}", result.is_ok());
+        Ok(CallToolResult::success(vec![ContentBlock::text(result?)]))
+    }
 }
 
 #[tool_handler(router = self.tool_router)]

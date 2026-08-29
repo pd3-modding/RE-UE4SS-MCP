@@ -27,6 +27,9 @@ extern "C" fn log_tail(
 ) -> bool {
     false
 }
+extern "C" fn reload_mods(_ctx: *mut c_void, _out: *mut McpString) -> bool {
+    false
+}
 extern "C" fn on_tool_call(_ctx: *mut c_void, _t: *const u16, _a: *const u16, _ok: bool) {}
 extern "C" fn free_string(_ctx: *mut c_void, _s: *mut McpString) {}
 
@@ -37,6 +40,7 @@ fn test_host() -> Host {
         lua_eval,
         game_status,
         log_tail,
+        reload_mods,
         on_tool_call,
         free_string,
     })
@@ -54,7 +58,11 @@ fn every_tool_is_registered_and_described() {
         "missing game_status: {names:?}"
     );
     assert!(names.contains(&"log_tail"), "missing log_tail: {names:?}");
-    assert_eq!(names.len(), 3, "unexpected tool set: {names:?}");
+    assert!(
+        names.contains(&"reload_mods"),
+        "missing reload_mods: {names:?}"
+    );
+    assert_eq!(names.len(), 4, "unexpected tool set: {names:?}");
 
     // A tool with no description is close to useless to a model, so treat it as a failure.
     for tool in &tools {
@@ -86,6 +94,7 @@ fn session_logs_connect_and_disconnect_exactly_once() {
         lua_eval,
         game_status,
         log_tail,
+        reload_mods,
         on_tool_call,
         free_string,
     });

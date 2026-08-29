@@ -76,6 +76,10 @@ pub struct McpHost {
         out: *mut McpString,
     ) -> bool,
 
+    /// Reinstall every mod, picking up edited files from disk. Blocks until the reload has
+    /// finished, so a successful return means the mods are back up.
+    pub reload_mods: extern "C" fn(ctx: *mut c_void, out: *mut McpString) -> bool,
+
     /// Record a tool invocation so the Lua Debugger tab can show recent calls.
     pub on_tool_call:
         extern "C" fn(ctx: *mut c_void, tool: *const u16, args_json: *const u16, ok: bool),
@@ -137,6 +141,17 @@ impl Host {
             .unwrap_or(std::ptr::null());
         let mut out = McpString::empty();
         let ok = (self.0.log_tail)(self.0.ctx, lines, filter_ptr, &mut out as *mut McpString);
+        let text = self.take(out);
+        if ok {
+            Ok(text)
+        } else {
+            Err(text)
+        }
+    }
+
+    pub fn reload_mods(&self) -> Result<String, String> {
+        let mut out = McpString::empty();
+        let ok = (self.0.reload_mods)(self.0.ctx, &mut out as *mut McpString);
         let text = self.take(out);
         if ok {
             Ok(text)

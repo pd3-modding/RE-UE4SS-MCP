@@ -63,6 +63,10 @@ extern "C"
         // `filter` may be null.
         bool (*log_tail)(void* ctx, uint32_t lines, const McpChar* filter, McpString* out);
 
+        // Reinstall every mod, picking up edited files from disk. Blocks until the reload
+        // has finished, so returning true means the mods are back up.
+        bool (*reload_mods)(void* ctx, McpString* out);
+
         // Record a tool invocation so the GUI can show recent calls.
         void (*on_tool_call)(void* ctx, const McpChar* tool, const McpChar* args_json, bool ok);
 
