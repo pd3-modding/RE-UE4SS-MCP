@@ -130,9 +130,12 @@ impl Pd3Server {
     }
 
     #[tool(
-        description = "Loader and game state as JSON: UE4SS version, whether a world/heist is \
-                       loaded, which mods are running, and whether UFunction dispatch \
-                       (ProcessEvent) resolved correctly on this build."
+        description = "Loader state as JSON: UE4SS version and build configuration, whether \
+                       Unreal is initialised, whether the loader finished starting, the \
+                       configured mods and whether each is enabled, and how many tool \
+                       requests are queued. Reads no game objects, so it still answers when \
+                       the game thread is stuck -- use lua_eval for anything about the world \
+                       itself (current map, actors, player state)."
     )]
     pub async fn game_status(&self) -> Result<CallToolResult, ErrorData> {
         let result = self.offload(|h| h.game_status()).await;
@@ -173,10 +176,13 @@ impl ServerHandler for Pd3Server {
         // struct literal from outside rmcp. Start from Default and assign.
         let mut info = ServerInfo::default();
         info.instructions = Some(
-            "Live interface to a running PAYDAY 3 process via UE4SS. `lua_eval` runs Lua on \
-             the game thread; `game_status` reports loader state; `log_tail` reads UE4SS.log. \
-             Game objects only exist while a world is loaded -- check game_status before \
-             assuming a heist is running."
+            "Live interface to a running game via UE4SS. `lua_eval` runs Lua on the game \
+             thread and is the only tool that can see game objects; `game_status` reports \
+             loader state; `log_tail` reads UE4SS.log.\n\n\
+             Game objects exist only while a world is loaded, and a lua_eval that finds \
+             nothing usually means the game is at the main menu rather than that the query \
+             was wrong. If lua_eval times out, the game thread is not ticking (loading a map, \
+             or the process is suspended) -- game_status and log_tail still work then."
                 .into(),
         );
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
