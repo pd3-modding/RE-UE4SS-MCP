@@ -36,6 +36,8 @@ pub struct McpConfig {
 struct ServerState {
     runtime: Runtime,
     shutdown: Option<oneshot::Sender<()>>,
+    /// Kept so `mcp_stop` can log through the same sink `mcp_start` used.
+    host: Host,
 }
 
 static SERVER: Mutex<Option<ServerState>> = Mutex::new(None);
@@ -117,6 +119,7 @@ pub unsafe extern "C" fn mcp_start(config: &McpConfig, host: &McpHost) -> bool {
     *guard = Some(ServerState {
         runtime,
         shutdown: Some(tx),
+        host,
     });
     true
 }
@@ -129,13 +132,17 @@ pub extern "C" fn mcp_stop() {
         Err(_) => return,
     };
     if let Some(mut state) = state {
+        let host = state.host;
+        host.log("[MCP] stopping");
         if let Some(tx) = state.shutdown.take() {
             let _ = tx.send(());
         }
-        // Give in-flight requests a moment, then drop the runtime.
+        // Give in-flight requests a moment, then drop the runtime. Dropping it also drops any
+        // live sessions, so their disconnect lines are logged here.
         state
             .runtime
             .shutdown_timeout(std::time::Duration::from_secs(2));
+        host.log("[MCP] stopped");
     }
 }
 
@@ -144,4 +151,3 @@ pub extern "C" fn mcp_stop() {
 pub extern "C" fn mcp_is_running() -> bool {
     SERVER.lock().map(|g| g.is_some()).unwrap_or(false)
 }
-

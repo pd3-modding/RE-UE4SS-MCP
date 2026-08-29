@@ -12,6 +12,8 @@ use rmcp::transport::streamable_http_server::StreamableHttpService;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -31,9 +33,49 @@ pub struct LogTailArgs {
     pub filter: Option<String>,
 }
 
+/// Number of live MCP sessions, so the log can say how many clients remain.
+static ACTIVE_SESSIONS: AtomicU64 = AtomicU64::new(0);
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Logs "connected" on construction and "disconnected" when the last clone of the owning
+/// `Pd3Server` goes away.
+///
+/// This is held behind an `Arc` rather than being dropped with `Pd3Server` directly, because
+/// rmcp clones the handler internally -- a bare `Drop` impl on `Pd3Server` would report a
+/// disconnect every time a clone went out of scope.
+struct SessionGuard {
+    host: Host,
+    id: u64,
+}
+
+impl SessionGuard {
+    fn new(host: Host) -> Self {
+        let id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+        let active = ACTIVE_SESSIONS.fetch_add(1, Ordering::SeqCst) + 1;
+        host.log(&format!(
+            "[MCP] client connected (session {id}, {active} active)"
+        ));
+        Self { host, id }
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        let active = ACTIVE_SESSIONS
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1);
+        self.host.log(&format!(
+            "[MCP] client disconnected (session {}, {} active)",
+            self.id, active
+        ));
+    }
+}
+
 #[derive(Clone)]
 pub struct Pd3Server {
     host: Host,
+    /// Kept alive for the lifetime of the session purely for its `Drop`.
+    _session: Arc<SessionGuard>,
     pub tool_router: ToolRouter<Pd3Server>,
 }
 
@@ -42,6 +84,7 @@ impl Pd3Server {
     pub fn new(host: Host) -> Self {
         Self {
             host,
+            _session: Arc::new(SessionGuard::new(host)),
             tool_router: Self::tool_router(),
         }
     }
@@ -78,10 +121,12 @@ impl Pd3Server {
         let result = self.offload(move |h| h.lua_eval(&code)).await;
         let ok = result.is_ok();
         self.host.on_tool_call("lua_eval", &args.code, ok);
-        Ok(CallToolResult::success(vec![ContentBlock::text(match result {
-            Ok(text) => text,
-            Err(e) => return Err(e),
-        })]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            match result {
+                Ok(text) => text,
+                Err(e) => return Err(e),
+            },
+        )]))
     }
 
     #[tool(

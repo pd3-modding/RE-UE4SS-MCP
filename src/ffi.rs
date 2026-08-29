@@ -77,12 +77,8 @@ pub struct McpHost {
     ) -> bool,
 
     /// Record a tool invocation so the Lua Debugger tab can show recent calls.
-    pub on_tool_call: extern "C" fn(
-        ctx: *mut c_void,
-        tool: *const u16,
-        args_json: *const u16,
-        ok: bool,
-    ),
+    pub on_tool_call:
+        extern "C" fn(ctx: *mut c_void, tool: *const u16, args_json: *const u16, ok: bool),
 
     /// Release a string previously produced by one of the callbacks above.
     pub free_string: extern "C" fn(ctx: *mut c_void, s: *mut McpString),

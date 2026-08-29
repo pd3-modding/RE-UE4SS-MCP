@@ -6,8 +6,9 @@
 //! client side, so assert it here instead.
 
 use std::ffi::c_void;
+use std::sync::Mutex;
 
-use mcp_bind::ffi::{Host, McpHost, McpString};
+use mcp_bind::ffi::{from_utf16_ptr, Host, McpHost, McpString};
 
 // Minimal no-op host. These are never invoked by the assertions below -- constructing the
 // server only needs the vtable to exist.
@@ -48,7 +49,10 @@ fn every_tool_is_registered_and_described() {
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
     assert!(names.contains(&"lua_eval"), "missing lua_eval: {names:?}");
-    assert!(names.contains(&"game_status"), "missing game_status: {names:?}");
+    assert!(
+        names.contains(&"game_status"),
+        "missing game_status: {names:?}"
+    );
     assert!(names.contains(&"log_tail"), "missing log_tail: {names:?}");
     assert_eq!(names.len(), 3, "unexpected tool set: {names:?}");
 
@@ -61,6 +65,70 @@ fn every_tool_is_registered_and_described() {
             tool.name
         );
     }
+}
+
+/// A session must log exactly one connect and one disconnect, no matter how many times rmcp
+/// clones the handler internally. A bare `Drop` on `Pd3Server` would emit a disconnect per
+/// clone, which is why the guard sits behind an `Arc`.
+#[test]
+fn session_logs_connect_and_disconnect_exactly_once() {
+    // ctx points at this; the callback pushes every logged line into it.
+    let captured: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    extern "C" fn capture(ctx: *mut c_void, msg: *const u16) {
+        let sink = unsafe { &*(ctx as *const Mutex<Vec<String>>) };
+        sink.lock().unwrap().push(unsafe { from_utf16_ptr(msg) });
+    }
+
+    let host = Host(McpHost {
+        ctx: &captured as *const _ as *mut c_void,
+        log: capture,
+        lua_eval,
+        game_status,
+        log_tail,
+        on_tool_call,
+        free_string,
+    });
+
+    // Never hold this lock across a drop: the log callback takes the same mutex, and a
+    // std::sync::Mutex is not reentrant, so doing so deadlocks rather than fails.
+    let count = |needle: &str| {
+        captured
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l.contains(needle))
+            .count()
+    };
+
+    {
+        let server = mcp_bind::tools::Pd3Server::new(host);
+        let clones = vec![server.clone(), server.clone(), server.clone()];
+
+        assert_eq!(
+            count("client connected"),
+            1,
+            "expected exactly one connect line"
+        );
+        assert_eq!(
+            count("client disconnected"),
+            0,
+            "disconnected while the session was still alive"
+        );
+
+        drop(clones);
+        assert_eq!(
+            count("client disconnected"),
+            0,
+            "dropping a clone reported a disconnect while the original was still alive"
+        );
+    }
+
+    assert_eq!(
+        count("client disconnected"),
+        1,
+        "expected exactly one disconnect line after the session dropped"
+    );
 }
 
 #[test]
