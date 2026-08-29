@@ -1,0 +1,25 @@
+[package]
+name = "mcp_bind"
+version = "0.1.0"
+edition = "2021"
+description = "MCP (Model Context Protocol) server hosted inside UE4SS, exposed over HTTP."
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[dependencies]
+# Official Rust MCP SDK. `transport-streamable-http-server` is the HTTP transport;
+# `tower` lets us mount it as an axum service.
+rmcp = { version = "3.1", default-features = false, features = [
+    "server",
+    "macros",
+    "schemars",
+    "transport-streamable-http-server",
+    "server-side-http",
+    "tower",
+] }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
