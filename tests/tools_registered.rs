@@ -30,6 +30,13 @@ extern "C" fn log_tail(
 extern "C" fn reload_mods(_ctx: *mut c_void, _out: *mut McpString) -> bool {
     false
 }
+extern "C" fn execute_console_command(
+    _ctx: *mut c_void,
+    _command: *const u16,
+    _out: *mut McpString,
+) -> bool {
+    false
+}
 extern "C" fn on_tool_call(_ctx: *mut c_void, _t: *const u16, _a: *const u16, _ok: bool) {}
 extern "C" fn free_string(_ctx: *mut c_void, _s: *mut McpString) {}
 
@@ -41,6 +48,7 @@ fn test_host() -> Host {
         game_status,
         log_tail,
         reload_mods,
+        execute_console_command,
         on_tool_call,
         free_string,
     })
@@ -62,7 +70,11 @@ fn every_tool_is_registered_and_described() {
         names.contains(&"reload_mods"),
         "missing reload_mods: {names:?}"
     );
-    assert_eq!(names.len(), 4, "unexpected tool set: {names:?}");
+    assert!(
+        names.contains(&"execute_console_command"),
+        "missing execute_console_command: {names:?}"
+    );
+    assert_eq!(names.len(), 5, "unexpected tool set: {names:?}");
 
     // A tool with no description is close to useless to a model, so treat it as a failure.
     for tool in &tools {
@@ -95,6 +107,7 @@ fn session_logs_connect_and_disconnect_exactly_once() {
         game_status,
         log_tail,
         reload_mods,
+        execute_console_command,
         on_tool_call,
         free_string,
     });

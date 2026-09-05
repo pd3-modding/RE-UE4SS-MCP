@@ -80,6 +80,11 @@ pub struct McpHost {
     /// finished, so a successful return means the mods are back up.
     pub reload_mods: extern "C" fn(ctx: *mut c_void, out: *mut McpString) -> bool,
 
+    /// Execute a console command as if typed in the in-game console. Blocks until the game
+    /// thread has run it. Returns true on success; `out` receives output either way.
+    pub execute_console_command:
+        extern "C" fn(ctx: *mut c_void, command: *const u16, out: *mut McpString) -> bool,
+
     /// Record a tool invocation so the Lua Debugger tab can show recent calls.
     pub on_tool_call:
         extern "C" fn(ctx: *mut c_void, tool: *const u16, args_json: *const u16, ok: bool),
@@ -152,6 +157,18 @@ impl Host {
     pub fn reload_mods(&self) -> Result<String, String> {
         let mut out = McpString::empty();
         let ok = (self.0.reload_mods)(self.0.ctx, &mut out as *mut McpString);
+        let text = self.take(out);
+        if ok {
+            Ok(text)
+        } else {
+            Err(text)
+        }
+    }
+
+    pub fn execute_console_command(&self, command: &str) -> Result<String, String> {
+        let wide = to_utf16(command);
+        let mut out = McpString::empty();
+        let ok = (self.0.execute_console_command)(self.0.ctx, wide.as_ptr(), &mut out as *mut McpString);
         let text = self.take(out);
         if ok {
             Ok(text)

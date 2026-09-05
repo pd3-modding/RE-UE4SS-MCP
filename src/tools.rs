@@ -33,6 +33,15 @@ pub struct LogTailArgs {
     pub filter: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExecuteConsoleCommandArgs {
+    /// The console command exactly as it would be typed in the in-game console, arguments
+    /// included (e.g. "stat fps"). Runs through the engine's own console executor, so
+    /// CVars, engine commands and mod handlers registered via
+    /// `RegisterConsoleCommandHandler` all fire.
+    pub command: String,
+}
+
 /// Number of live MCP sessions, so the log can say how many clients remain.
 static ACTIVE_SESSIONS: AtomicU64 = AtomicU64::new(0);
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
@@ -180,6 +189,31 @@ impl Pd3Server {
         self.host.on_tool_call("reload_mods", "{}", result.is_ok());
         Ok(CallToolResult::success(vec![ContentBlock::text(result?)]))
     }
+
+    #[tool(
+        description = "Execute a console command as if typed in the in-game console. This is \
+                       how to invoke a mod's registered console commands (e.g. 'wv.status', \
+                       'mm.list') and engine CVars/commands ('stat fps'). Blocks until the \
+                       game thread has run it; returns the command's console output."
+    )]
+    pub async fn execute_console_command(
+        &self,
+        Parameters(args): Parameters<ExecuteConsoleCommandArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let command = args.command.clone();
+        let result = self
+            .offload(move |h| h.execute_console_command(&command))
+            .await;
+        let ok = result.is_ok();
+        self.host
+            .on_tool_call("execute_console_command", &args.command, ok);
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            match result {
+                Ok(text) => text,
+                Err(e) => return Err(e),
+            },
+        )]))
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -191,7 +225,8 @@ impl ServerHandler for Pd3Server {
         info.instructions = Some(
             "Live interface to a running game via UE4SS. `lua_eval` runs Lua on the game \
              thread and is the only tool that can see game objects; `game_status` reports \
-             loader state; `log_tail` reads UE4SS.log.\n\n\
+             loader state; `log_tail` reads UE4SS.log; `execute_console_command` runs a \
+             console command (mods register test commands like 'wv.status' and 'mm.list').\n\n\
              Game objects exist only while a world is loaded, and a lua_eval that finds \
              nothing usually means the game is at the main menu rather than that the query \
              was wrong. If lua_eval times out, the game thread is not ticking (loading a map, \

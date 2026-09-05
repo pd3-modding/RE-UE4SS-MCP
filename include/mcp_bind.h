@@ -67,6 +67,10 @@ extern "C"
         // has finished, so returning true means the mods are back up.
         bool (*reload_mods)(void* ctx, McpString* out);
 
+        // Execute a console command exactly as if it had been typed in the in-game console
+        // (the engine's own executor). Blocks until the game thread has run it.
+        bool (*execute_console_command)(void* ctx, const McpChar* command, McpString* out);
+
         // Record a tool invocation so the GUI can show recent calls.
         void (*on_tool_call)(void* ctx, const McpChar* tool, const McpChar* args_json, bool ok);
 
